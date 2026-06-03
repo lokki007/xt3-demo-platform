@@ -1,0 +1,90 @@
+import { once } from 'node:events';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import net from 'node:net';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+async function freePort() {
+  const server = net.createServer();
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const { port } = server.address();
+  server.close();
+  await once(server, 'close');
+  return port;
+}
+
+async function startApp() {
+  const port = await freePort();
+  const dataDir = await mkdtemp(path.join(tmpdir(), 'xt3-demo-'));
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: path.resolve(import.meta.dirname, '..'),
+    env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, ADMIN_PASSWORD: 'test-pass' },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  let output = '';
+  child.stdout.on('data', chunk => { output += chunk.toString(); });
+  child.stderr.on('data', chunk => { output += chunk.toString(); });
+
+  const deadline = Date.now() + 5000;
+  while (!output.includes('XT3 Demo Platform listening')) {
+    if (child.exitCode !== null) throw new Error(`server exited early: ${output}`);
+    if (Date.now() > deadline) throw new Error(`server did not start: ${output}`);
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+
+  return {
+    base: `http://127.0.0.1:${port}`,
+    async stop() {
+      child.kill();
+      await Promise.race([once(child, 'exit'), new Promise(resolve => setTimeout(resolve, 1000))]);
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  };
+}
+
+test('admin pages and API require the password while public previews stay open', async () => {
+  const app = await startApp();
+  try {
+    const admin = await fetch(`${app.base}/admin`);
+    assert.equal(admin.status, 200);
+    assert.match(await admin.text(), /Admin access/);
+
+    const root = await fetch(`${app.base}/`);
+    assert.equal(root.status, 200);
+    assert.match(await root.text(), /Admin access/);
+
+    const api = await fetch(`${app.base}/api/sites`);
+    assert.equal(api.status, 401);
+    assert.deepEqual(await api.json(), { error: 'Admin password required' });
+
+    const login = await fetch(`${app.base}/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password: 'test-pass' }),
+      redirect: 'manual'
+    });
+    assert.equal(login.status, 303);
+    const cookie = login.headers.get('set-cookie');
+    assert.match(cookie, /xt3_admin=/);
+    assert.match(cookie, /HttpOnly/);
+
+    const authedApi = await fetch(`${app.base}/api/sites`, { headers: { cookie } });
+    assert.equal(authedApi.status, 200);
+    assert.equal(Array.isArray(await authedApi.json()), true);
+
+    const preview = await fetch(`${app.base}/pure-pressure-power-washing/`);
+    assert.equal(preview.status, 200);
+    assert.match(await preview.text(), /Pure Pressure Power Washing/i);
+
+    const health = await fetch(`${app.base}/health`);
+    assert.equal(health.status, 200);
+    assert.equal(await health.text(), 'OK');
+  } finally {
+    await app.stop();
+  }
+});

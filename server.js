@@ -6,6 +6,8 @@ import crypto from 'node:crypto';
 const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'sites.json');
+const ADMIN_COOKIE = 'xt3_admin';
+const DEFAULT_ADMIN_PASSWORD_HASH = 'a1e62e4e7b07e871d8db9b249396064e2cb4406da0edd0b097b31c6b6e6279c7';
 
 const seed = {
   sites: [
@@ -50,7 +52,27 @@ function slugify(s) { return String(s || '').toLowerCase().trim().replace(/[^a-z
 function esc(s='') { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function json(res, code, data) { send(res, code, JSON.stringify(data), 'application/json; charset=utf-8'); }
 function send(res, code, body, type='text/html; charset=utf-8', extra={}) { res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', ...extra }); res.end(body); }
-async function body(req) { let b=''; for await (const c of req) b += c; return b ? JSON.parse(b) : {}; }
+async function readRawBody(req) { let b=''; for await (const c of req) b += c; return b; }
+async function body(req) { const b = await readRawBody(req); return b ? JSON.parse(b) : {}; }
+function sha256(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
+function adminPasswordHash() { return process.env.ADMIN_PASSWORD ? sha256(process.env.ADMIN_PASSWORD) : (process.env.ADMIN_PASSWORD_HASH || DEFAULT_ADMIN_PASSWORD_HASH); }
+function timingSafeEqualHex(a, b) {
+  if (!/^[a-f0-9]{64}$/i.test(a) || !/^[a-f0-9]{64}$/i.test(b)) return false;
+  return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+}
+function verifyAdminPassword(password) { return timingSafeEqualHex(sha256(password || ''), adminPasswordHash()); }
+function adminSessionToken() { return sha256(`xt3-admin-session:${adminPasswordHash()}`); }
+function parseCookies(req) {
+  return Object.fromEntries(String(req.headers.cookie || '').split(';').map(part => {
+    const i = part.indexOf('=');
+    return i < 0 ? ['', ''] : [part.slice(0, i).trim(), decodeURIComponent(part.slice(i + 1).trim())];
+  }).filter(([k]) => k));
+}
+function hasAdminSession(req) { return parseCookies(req)[ADMIN_COOKIE] === adminSessionToken(); }
+function adminCookie(value, maxAge) {
+  return `${ADMIN_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
+}
+function isAdminSurface(url) { return url.pathname === '/' || url.pathname === '/admin' || url.pathname.startsWith('/api/sites'); }
 
 const staticSites = {
   'alexys-nevitt-voice-studio': path.join(process.cwd(), 'client-sites', 'alexys-nevitt-voice-studio'),
@@ -81,10 +103,14 @@ const css = `
 
 function layout(title, content) { return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${css}</style></head><body>${content}</body></html>`; }
 
+function loginPage(error='') {
+  return layout('XT3 Demo Platform Admin Access', `<div class="wrap"><section class="card hero" style="max-width:560px;margin:12vh auto 0"><div class="brand">XT3 Demo Platform</div><span class="pill" style="margin-top:18px">Admin access</span><h1 style="font-size:44px">Enter the admin password.</h1><p>Client preview links stay public. The dashboard and site editor are private.</p>${error ? `<p style="color:var(--bad);font-weight:800">${esc(error)}</p>` : ''}<form class="list" method="post" action="/login"><label>Password<input name="password" type="password" autocomplete="current-password" autofocus required></label><button class="btn" type="submit">Continue</button></form></section></div>`);
+}
+
 function adminPage() {
   const db = readDb();
   const items = db.sites.map(s => `<div class="site"><div><h3>${esc(s.name)}</h3><p>/${esc(s.slug)} · ${esc(s.industry || 'No industry')} · ${esc(s.status)}</p></div><div class="actions"><a class="btn ghost" href="/${esc(s.slug)}" target="_blank">Preview</a><button class="btn ghost" onclick='editSite(${JSON.stringify(s).replaceAll("'", '&#39;')})'>Edit</button><button class="btn danger" onclick="deleteSite('${esc(s.id)}')">Delete</button></div></div>`).join('');
-  return layout('XT3 Demo Platform', `<div class="wrap"><div class="nav"><div><div class="brand">XT3 Demo Platform</div><div class="muted">Path-based client website previews on demo.xt3.us</div></div><span class="pill">${db.sites.length} sites</span></div><div class="grid"><section class="card hero"><span class="pill">Admin dashboard</span><h1>Spin up client preview sites without DNS hell.</h1><p>Add a client, paste their current URL/social/contact/context, and publish a clean preview at <b>/client-slug</b>.</p><div class="kpis"><div class="kpi"><b>${db.sites.length}</b><span class="muted">Sites</span></div><div class="kpi"><b>1</b><span class="muted">Domain</span></div><div class="kpi"><b>0</b><span class="muted">Cloudflare upsells</span></div></div></section><section class="card"><h2 id="formTitle">Create site</h2><form id="siteForm" class="list"><input type="hidden" name="id"><div class="formgrid"><label>Name<input name="name" required placeholder="Local Coffee Shop"></label><label>Slug<input name="slug" placeholder="local-coffee-shop"></label><label>Industry<input name="industry" placeholder="Cafe / Med spa / Contractor"></label><label>Location<input name="location" placeholder="City, ST"></label><label class="full">Current website<input name="currentUrl" placeholder="https://..."></label><label>Phone<input name="phone"></label><label>Email<input name="email"></label><label>Socials<input name="socials" placeholder="Instagram, Facebook, TikTok"></label><label>Palette<select name="palette"><option value="blue">Blue</option><option value="green">Green</option><option value="orange">Orange</option></select></label><label>Status<select name="status"><option value="published">Published</option><option value="draft">Draft</option></select></label><label class="full">Headline<textarea name="headline" rows="2" required></textarea></label><label class="full">Subheadline<textarea name="subheadline" rows="3"></textarea></label><label class="full">Offer<textarea name="offer" rows="2"></textarea></label><label class="full">Notes / raw client info<textarea name="notes" rows="4"></textarea></label></div><div class="actions"><button class="btn" type="submit">Save site</button><button class="btn ghost" type="button" onclick="resetForm()">New blank</button></div></form></section></div><section class="card" style="margin-top:22px"><h2>Sites</h2><div class="list">${items || '<p class="muted">No sites yet.</p>'}</div></section></div><script>
+  return layout('XT3 Demo Platform', `<div class="wrap"><div class="nav"><div><div class="brand">XT3 Demo Platform</div><div class="muted">Path-based client website previews on demo.xt3.us</div></div><div class="actions"><span class="pill">${db.sites.length} sites</span><a class="btn ghost" href="/logout">Log out</a></div></div><div class="grid"><section class="card hero"><span class="pill">Admin dashboard</span><h1>Spin up client preview sites without DNS hell.</h1><p>Add a client, paste their current URL/social/contact/context, and publish a clean preview at <b>/client-slug</b>.</p><div class="kpis"><div class="kpi"><b>${db.sites.length}</b><span class="muted">Sites</span></div><div class="kpi"><b>1</b><span class="muted">Domain</span></div><div class="kpi"><b>0</b><span class="muted">Cloudflare upsells</span></div></div></section><section class="card"><h2 id="formTitle">Create site</h2><form id="siteForm" class="list"><input type="hidden" name="id"><div class="formgrid"><label>Name<input name="name" required placeholder="Local Coffee Shop"></label><label>Slug<input name="slug" placeholder="local-coffee-shop"></label><label>Industry<input name="industry" placeholder="Cafe / Med spa / Contractor"></label><label>Location<input name="location" placeholder="City, ST"></label><label class="full">Current website<input name="currentUrl" placeholder="https://..."></label><label>Phone<input name="phone"></label><label>Email<input name="email"></label><label>Socials<input name="socials" placeholder="Instagram, Facebook, TikTok"></label><label>Palette<select name="palette"><option value="blue">Blue</option><option value="green">Green</option><option value="orange">Orange</option></select></label><label>Status<select name="status"><option value="published">Published</option><option value="draft">Draft</option></select></label><label class="full">Headline<textarea name="headline" rows="2" required></textarea></label><label class="full">Subheadline<textarea name="subheadline" rows="3"></textarea></label><label class="full">Offer<textarea name="offer" rows="2"></textarea></label><label class="full">Notes / raw client info<textarea name="notes" rows="4"></textarea></label></div><div class="actions"><button class="btn" type="submit">Save site</button><button class="btn ghost" type="button" onclick="resetForm()">New blank</button></div></form></section></div><section class="card" style="margin-top:22px"><h2>Sites</h2><div class="list">${items || '<p class="muted">No sites yet.</p>'}</div></section></div><script>
 const form = document.getElementById('siteForm');
 function resetForm(){ form.reset(); form.id.value=''; document.getElementById('formTitle').textContent='Create site'; }
 function editSite(s){ document.getElementById('formTitle').textContent='Edit site'; for (const [k,v] of Object.entries(s)) if(form[k] && typeof v !== 'object') form[k].value = v || ''; scrollTo({top:0,behavior:'smooth'}); }
@@ -107,8 +133,19 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const firstSegment = url.pathname.split('/').filter(Boolean)[0] || '';
     if (staticSites[firstSegment]) return serveStaticSite(req, res, url, firstSegment, staticSites[firstSegment]);
-    if (url.pathname === '/' || url.pathname === '/admin') return send(res, 200, adminPage());
     if (url.pathname === '/health') return send(res, 200, 'OK', 'text/plain');
+    if (url.pathname === '/login' && req.method === 'POST') {
+      const form = new URLSearchParams(await readRawBody(req));
+      if (!verifyAdminPassword(form.get('password'))) return send(res, 200, loginPage('Wrong password. Try again.'));
+      return send(res, 303, '', 'text/plain', { location: '/admin', 'set-cookie': adminCookie(adminSessionToken(), 60 * 60 * 12) });
+    }
+    if (url.pathname === '/login') return hasAdminSession(req) ? send(res, 303, '', 'text/plain', { location: '/admin' }) : send(res, 200, loginPage());
+    if (url.pathname === '/logout') return send(res, 303, '', 'text/plain', { location: '/login', 'set-cookie': adminCookie('', 0) });
+    if (isAdminSurface(url) && !hasAdminSession(req)) {
+      if (url.pathname.startsWith('/api/')) return json(res, 401, { error: 'Admin password required' });
+      return send(res, 200, loginPage());
+    }
+    if (url.pathname === '/' || url.pathname === '/admin') return send(res, 200, adminPage());
     if (url.pathname === '/api/sites' && req.method === 'GET') return json(res, 200, readDb().sites);
     if (url.pathname === '/api/sites' && req.method === 'POST') {
       const d = await body(req); const db = readDb(); const now = new Date().toISOString();
