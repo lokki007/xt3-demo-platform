@@ -88,3 +88,29 @@ test('admin pages and API require the password while public previews stay open',
     await app.stop();
   }
 });
+
+test('admin dashboard lists pushed static client sites without the create form', async () => {
+  const app = await startApp();
+  try {
+    const login = await fetch(`${app.base}/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password: 'test-pass' }),
+      redirect: 'manual'
+    });
+    const cookie = login.headers.get('set-cookie');
+
+    const admin = await fetch(`${app.base}/admin`, { headers: { cookie } });
+    assert.equal(admin.status, 200);
+    const html = await admin.text();
+
+    assert.doesNotMatch(html, /Create site/);
+    assert.doesNotMatch(html, /Save site/);
+    assert.match(html, /3 active sites/);
+    assert.match(html, /Alexys Nevitt Voice Studio/);
+    assert.match(html, /LakeShore Lawn Care/);
+    assert.match(html, /Pure Pressure Power Washing/);
+  } finally {
+    await app.stop();
+  }
+});

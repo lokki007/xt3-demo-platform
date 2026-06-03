@@ -75,9 +75,21 @@ function adminCookie(value, maxAge) {
 function isAdminSurface(url) { return url.pathname === '/' || url.pathname === '/admin' || url.pathname.startsWith('/api/sites'); }
 
 const staticSites = {
-  'alexys-nevitt-voice-studio': path.join(process.cwd(), 'client-sites', 'alexys-nevitt-voice-studio'),
-  'pure-pressure-power-washing': path.join(process.cwd(), 'client-sites', 'pure-pressure-power-washing'),
-  'lakeshore-lawn-care': path.join(process.cwd(), 'client-sites', 'lakeshore-lawn-care')
+  'alexys-nevitt-voice-studio': {
+    name: 'Alexys Nevitt Voice Studio',
+    type: 'Voice lessons',
+    root: path.join(process.cwd(), 'client-sites', 'alexys-nevitt-voice-studio')
+  },
+  'lakeshore-lawn-care': {
+    name: 'LakeShore Lawn Care',
+    type: 'Lawn care',
+    root: path.join(process.cwd(), 'client-sites', 'lakeshore-lawn-care')
+  },
+  'pure-pressure-power-washing': {
+    name: 'Pure Pressure Power Washing',
+    type: 'Pressure washing',
+    root: path.join(process.cwd(), 'client-sites', 'pure-pressure-power-washing')
+  }
 };
 const mime = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.webp':'image/webp', '.ico':'image/x-icon' };
 function safeJoin(root, rel) {
@@ -108,15 +120,9 @@ function loginPage(error='') {
 }
 
 function adminPage() {
-  const db = readDb();
-  const items = db.sites.map(s => `<div class="site"><div><h3>${esc(s.name)}</h3><p>/${esc(s.slug)} · ${esc(s.industry || 'No industry')} · ${esc(s.status)}</p></div><div class="actions"><a class="btn ghost" href="/${esc(s.slug)}" target="_blank">Preview</a><button class="btn ghost" onclick='editSite(${JSON.stringify(s).replaceAll("'", '&#39;')})'>Edit</button><button class="btn danger" onclick="deleteSite('${esc(s.id)}')">Delete</button></div></div>`).join('');
-  return layout('XT3 Demo Platform', `<div class="wrap"><div class="nav"><div><div class="brand">XT3 Demo Platform</div><div class="muted">Path-based client website previews on demo.xt3.us</div></div><div class="actions"><span class="pill">${db.sites.length} sites</span><a class="btn ghost" href="/logout">Log out</a></div></div><div class="grid"><section class="card hero"><span class="pill">Admin dashboard</span><h1>Spin up client preview sites without DNS hell.</h1><p>Add a client, paste their current URL/social/contact/context, and publish a clean preview at <b>/client-slug</b>.</p><div class="kpis"><div class="kpi"><b>${db.sites.length}</b><span class="muted">Sites</span></div><div class="kpi"><b>1</b><span class="muted">Domain</span></div><div class="kpi"><b>0</b><span class="muted">Cloudflare upsells</span></div></div></section><section class="card"><h2 id="formTitle">Create site</h2><form id="siteForm" class="list"><input type="hidden" name="id"><div class="formgrid"><label>Name<input name="name" required placeholder="Local Coffee Shop"></label><label>Slug<input name="slug" placeholder="local-coffee-shop"></label><label>Industry<input name="industry" placeholder="Cafe / Med spa / Contractor"></label><label>Location<input name="location" placeholder="City, ST"></label><label class="full">Current website<input name="currentUrl" placeholder="https://..."></label><label>Phone<input name="phone"></label><label>Email<input name="email"></label><label>Socials<input name="socials" placeholder="Instagram, Facebook, TikTok"></label><label>Palette<select name="palette"><option value="blue">Blue</option><option value="green">Green</option><option value="orange">Orange</option></select></label><label>Status<select name="status"><option value="published">Published</option><option value="draft">Draft</option></select></label><label class="full">Headline<textarea name="headline" rows="2" required></textarea></label><label class="full">Subheadline<textarea name="subheadline" rows="3"></textarea></label><label class="full">Offer<textarea name="offer" rows="2"></textarea></label><label class="full">Notes / raw client info<textarea name="notes" rows="4"></textarea></label></div><div class="actions"><button class="btn" type="submit">Save site</button><button class="btn ghost" type="button" onclick="resetForm()">New blank</button></div></form></section></div><section class="card" style="margin-top:22px"><h2>Sites</h2><div class="list">${items || '<p class="muted">No sites yet.</p>'}</div></section></div><script>
-const form = document.getElementById('siteForm');
-function resetForm(){ form.reset(); form.id.value=''; document.getElementById('formTitle').textContent='Create site'; }
-function editSite(s){ document.getElementById('formTitle').textContent='Edit site'; for (const [k,v] of Object.entries(s)) if(form[k] && typeof v !== 'object') form[k].value = v || ''; scrollTo({top:0,behavior:'smooth'}); }
-form.addEventListener('submit', async e => { e.preventDefault(); const data = Object.fromEntries(new FormData(form).entries()); const r = await fetch('/api/sites' + (data.id ? '/' + data.id : ''), { method: data.id ? 'PUT':'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(data)}); if(!r.ok) alert(await r.text()); else location.reload(); });
-async function deleteSite(id){ if(confirm('Delete this demo site?')) { await fetch('/api/sites/'+id,{method:'DELETE'}); location.reload(); } }
-</script></body></html>`);
+  const sites = Object.entries(staticSites);
+  const items = sites.map(([slug, site]) => `<div class="site"><div><h3>${esc(site.name)}</h3><p>/${esc(slug)} · ${esc(site.type)} · Pushed site</p></div><div class="actions"><a class="btn ghost" href="/${esc(slug)}/" target="_blank">Preview</a></div></div>`).join('');
+  return layout('XT3 Demo Platform', `<div class="wrap"><div class="nav"><div><div class="brand">XT3 Demo Platform</div><div class="muted">Active client previews on demo.xt3.us</div></div><div class="actions"><span class="pill">${sites.length} active sites</span><a class="btn ghost" href="/logout">Log out</a></div></div><section class="card hero"><div style="display:flex;justify-content:space-between;gap:24px;align-items:flex-start;flex-wrap:wrap"><div><span class="pill">Admin dashboard</span><h1>Active preview sites.</h1><p>These are the live client previews pushed to <b>client-sites</b>. Open a preview to check the current page.</p></div><div class="kpi" style="min-width:150px;text-align:center"><b style="font-size:72px;line-height:1">${sites.length}</b><span class="muted">Active sites</span></div></div><div class="list" style="margin-top:26px">${items || '<p class="muted">No active pushed sites found.</p>'}</div></section></div>`);
 }
 
 function publicSite(site) {
@@ -132,7 +138,7 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const firstSegment = url.pathname.split('/').filter(Boolean)[0] || '';
-    if (staticSites[firstSegment]) return serveStaticSite(req, res, url, firstSegment, staticSites[firstSegment]);
+    if (staticSites[firstSegment]) return serveStaticSite(req, res, url, firstSegment, staticSites[firstSegment].root);
     if (url.pathname === '/health') return send(res, 200, 'OK', 'text/plain');
     if (url.pathname === '/login' && req.method === 'POST') {
       const form = new URLSearchParams(await readRawBody(req));
