@@ -1,0 +1,6 @@
+node_modules/
+data/
+*.tar.gz
+.coolify-token.tmp
+inspect-apps.js
+.DS_Store
