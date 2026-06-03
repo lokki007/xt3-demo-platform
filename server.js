@@ -53,7 +53,9 @@ function send(res, code, body, type='text/html; charset=utf-8', extra={}) { res.
 async function body(req) { let b=''; for await (const c of req) b += c; return b ? JSON.parse(b) : {}; }
 
 const staticSites = {
-  'pure-pressure-power-washing': path.join(process.cwd(), 'client-sites', 'pure-pressure-power-washing')
+  'alexys-nevitt-voice-studio': path.join(process.cwd(), 'client-sites', 'alexys-nevitt-voice-studio'),
+  'pure-pressure-power-washing': path.join(process.cwd(), 'client-sites', 'pure-pressure-power-washing'),
+  'lakeshore-lawn-care': path.join(process.cwd(), 'client-sites', 'lakeshore-lawn-care')
 };
 const mime = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.webp':'image/webp', '.ico':'image/x-icon' };
 function safeJoin(root, rel) {

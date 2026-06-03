@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" role="img" aria-labelledby="title">
+  <title id="title">Alexys Nevitt Voice Studio mark</title>
+  <defs>
+    <linearGradient id="g" x1="28" y1="18" x2="178" y2="198" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f47a6b"/>
+      <stop offset="0.45" stop-color="#e24d4d"/>
+      <stop offset="1" stop-color="#8cc7e8"/>
+    </linearGradient>
+  </defs>
+  <rect width="220" height="220" rx="42" fill="#281326"/>
+  <path d="M100 32c-19 17-31 38-31 64v72c0 17-10 29-25 29-9 0-18-5-22-13 8 5 18 4 26-1 9-6 13-15 13-27V82c0-33 19-56 39-70v20Z" fill="url(#g)"/>
+  <path d="M103 31v105c7-6 18-11 31-11 25 0 44 17 44 39s-19 38-44 38c-24 0-43-16-43-38V31h12Zm31 103c-17 0-31 11-31 26s14 27 31 27c18 0 31-12 31-27s-13-26-31-26Z" fill="#fff8ef"/>
+  <path d="M118 63c26-10 44-4 57 15" fill="none" stroke="#8cc7e8" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="55" cy="44" r="8" fill="#f47a6b"/>
+  <circle cx="178" cy="104" r="7" fill="#8cc7e8"/>
+</svg>
