@@ -114,3 +114,56 @@ test('admin dashboard lists pushed static client sites without the create form',
     await app.stop();
   }
 });
+
+test('admin can turn the public demo website off and back on', async () => {
+  const app = await startApp();
+  try {
+    const login = await fetch(`${app.base}/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password: 'test-pass' }),
+      redirect: 'manual'
+    });
+    const cookie = login.headers.get('set-cookie');
+
+    const livePreview = await fetch(`${app.base}/pure-pressure-power-washing/`);
+    assert.equal(livePreview.status, 200);
+    assert.match(await livePreview.text(), /Pure Pressure Power Washing/i);
+
+    const turnOff = await fetch(`${app.base}/admin/demo-website`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ enabled: 'false' }),
+      redirect: 'manual'
+    });
+    assert.equal(turnOff.status, 303);
+    assert.equal(turnOff.headers.get('location'), '/admin');
+
+    const admin = await fetch(`${app.base}/admin`, { headers: { cookie } });
+    assert.equal(admin.status, 200);
+    const adminHtml = await admin.text();
+    assert.match(adminHtml, /Demo website is offline/);
+    assert.match(adminHtml, /Turn on/);
+
+    const offlinePreview = await fetch(`${app.base}/pure-pressure-power-washing/`);
+    assert.equal(offlinePreview.status, 503);
+    assert.match(await offlinePreview.text(), /Demo website is offline/);
+
+    const health = await fetch(`${app.base}/health`);
+    assert.equal(health.status, 200);
+
+    const turnOn = await fetch(`${app.base}/admin/demo-website`, {
+      method: 'POST',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ enabled: 'true' }),
+      redirect: 'manual'
+    });
+    assert.equal(turnOn.status, 303);
+
+    const restoredPreview = await fetch(`${app.base}/pure-pressure-power-washing/`);
+    assert.equal(restoredPreview.status, 200);
+    assert.match(await restoredPreview.text(), /Pure Pressure Power Washing/i);
+  } finally {
+    await app.stop();
+  }
+});
